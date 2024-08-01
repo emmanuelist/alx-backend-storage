@@ -1,8 +1,27 @@
-#!/bin/usr/bash python3
-import redis
-import uuid
+#!/bin/usr/env python3
+
 import functools
-from typing import Union, Callable
+import uuid
+from typing import Callable, Union
+
+import redis
+
+
+def replay(method: Callable):
+    """
+    Replays the call history of a method by printing the input and output values.
+
+    Args:
+        method (Callable): The method to replay.
+    """
+    redis_client = redis.Redis()
+    method_name = method.__qualname__
+    inputs = redis_client.lrange(f"{method_name}:outputs", 0, -1)
+    outputs = redis_client.lrange(f"{method_name}:outputs", 0, -1)
+
+    print(f"{method_name} was called {len(inputs)} times:")
+    for input_data, output_data in zip(inputs, outputs):
+        print(f"{method_name}(*{input_data.decode('utf-8')}) -> {output_data.decode('utf-8')}")
 
 
 def count_calls(method: Callable) -> Callable:
