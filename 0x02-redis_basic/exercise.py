@@ -6,6 +6,8 @@ from typing import Callable, Union
 
 import redis
 
+# Define a decorator to replay the call history of a method
+
 
 def replay(method: Callable):
     """
@@ -15,15 +17,23 @@ def replay(method: Callable):
     Args:
         method (Callable): The method to replay.
     """
+    # Create a Redis client to access the call history
     redis_client = redis.Redis()
     method_name = method.__qualname__
+    # Retrieve the input and output values from Redis
     inputs = redis_client.lrange(f"{method_name}:inputs", 0, -1)
     outputs = redis_client.lrange(f"{method_name}:outputs", 0, -1)
 
+    # Print the call history
     print(f"{method_name} was called {len(inputs)} times:")
     for input_data, output_data in zip(inputs, outputs):
-        print(f"{method_name}(*{input_data.decode('utf-8')}) -> "
-              f"{output_data.decode('utf-8')}")
+        print(
+            f"{method_name}(*{input_data.decode('utf-8')}) -> "
+            f"{output_data.decode('utf-8')}"
+        )
+
+
+# Define a decorator to count the number of calls to a method
 
 
 def count_calls(method: Callable) -> Callable:
@@ -36,12 +46,20 @@ def count_calls(method: Callable) -> Callable:
     Returns:
         Callable: The decorated method.
     """
+
+    # Use functools.wraps to preserve the original method's metadata
     @functools.wraps(method)
     def wrapper(self, *args, **kwargs):
+        # Increment the call count in Redis
         key = method.__qualname__
         self._redis.incr(key)
+        # Call the original method
         return method(self, *args, **kwargs)
+
     return wrapper
+
+
+# Define a decorator to store the call history of a method
 
 
 def call_history(method: Callable) -> Callable:
@@ -54,16 +72,25 @@ def call_history(method: Callable) -> Callable:
     Returns:
         Callable: The decorated method.
     """
+
+    # Use functools.wraps to preserve the original method's metadata
     @functools.wraps(method)
     def wrapper(self, *args, **kwargs):
+        # Store the input values in Redis
         input_key = f"{method.__qualname__}:inputs"
-        output_key = f"{method.__qualname__}:outputs"
         self._redis.rpush(input_key, str(args))
+        # Call the original method
         output = method(self, *args, **kwargs)
+        # Store the output value in Redis
+        output_key = f"{method.__qualname__}:outputs"
         self._redis.rpush(output_key, str(output))
-
+        # Return the output value
         return output
+
     return wrapper
+
+
+# Define a class to manage data in a Redis cache
 
 
 class Cache:
@@ -96,9 +123,13 @@ class Cache:
         This will delete all existing data in the Redis database.
         Use with caution.
         """
+        # Create a Redis client
         self._redis = redis.Redis()
+        # Flush the Redis database
         self._redis.flushdb()
 
+    # Use the call_history and count_calls decorators to store the call
+    # history and count the number of calls
     @call_history
     @count_calls
     def store(self, data: Union[str, bytes, int, float]) -> str:
@@ -117,8 +148,11 @@ class Cache:
         str
             A unique key for the stored data.
         """
+        # Generate a unique key using uuid
         key = str(uuid.uuid4())
+        # Store the data in Redis
         self._redis.set(key, data)
+        # Return the unique key
         return key
 
     def get(self,
