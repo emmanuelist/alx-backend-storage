@@ -1,3 +1,4 @@
+from web import get_page, print_redis_keys, redis_client
 import sys
 import os
 import time
@@ -7,7 +8,6 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.dirname(current_dir)
 sys.path.append(parent_dir)
 
-from web import get_page, print_redis_keys, redis_client
 
 # Use the correct URL
 url = "http://slowwly.robertomurray.co.uk"
@@ -40,4 +40,3 @@ if count:
     print(f"Page was accessed {count.decode('utf-8')} times")
 else:
     print(f"No count found for URL: {url}")
-    
