@@ -4,9 +4,9 @@ import redis
 from functools import wraps
 from typing import Callable
 import requests
-import time
 
 redis_client = redis.Redis()
+
 
 def cache_with_expiry(expiry: int = 10) -> Callable:
     def decorator(func: Callable) -> Callable:
@@ -17,7 +17,7 @@ def cache_with_expiry(expiry: int = 10) -> Callable:
 
             # Increment the access count
             redis_client.incr(count_key)
-            
+
             print(f"Count for {url}: {redis_client.get(count_key)}")
 
             # Check if the page is cached
@@ -37,6 +37,7 @@ def cache_with_expiry(expiry: int = 10) -> Callable:
         return wrapper
     return decorator
 
+
 @cache_with_expiry()
 def get_page(url: str) -> str:
     try:
@@ -45,6 +46,7 @@ def get_page(url: str) -> str:
     except requests.RequestException:
         print(f"Failed to fetch {url}. Returning dummy content.")
         return f"Dummy content for {url}"
+
 
 def print_redis_keys():
     print("All keys in Redis:")
@@ -60,5 +62,5 @@ def print_redis_keys():
                 # Try to get the type of the key
                 key_type = redis_client.type(key).decode('utf-8')
                 print(f"{key}: (Type: {key_type})")
-            except:
+            except BaseException:
                 print(f"{key}: (Unable to retrieve value or type)")
