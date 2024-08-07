@@ -1,184 +1,148 @@
 #!/usr/bin/env python3
+"""
+Using Redis for basic
+operations with Python,
+and as a cache also
+"""
 
-import functools
-import uuid
-from typing import Callable, Union
 
+# Import statements
+from functools import wraps  # For decorators
 import redis
+import uuid
+from typing import Union, Callable, Optional
 
 
-def replay(method: Callable):
-    """
-    Replays the call history of a method by
-    printing the input and output values.
-
-    Args:
-        method (Callable): The method to replay.
-    """
-    redis_client = redis.Redis()
-    method_name = method.__qualname__
-    inputs = redis_client.lrange(f"{method_name}:inputs", 0, -1)
-    outputs = redis_client.lrange(f"{method_name}:outputs", 0, -1)
-
-    print(f"{method_name} was called {len(inputs)} times:")
-    for input_data, output_data in zip(inputs, outputs):
-        print(f"{method_name}(*{input_data.decode('utf-8')}) -> "
-              f"{output_data.decode('utf-8')}")
-
-
+# Defining the decorators above the Cache class
 def count_calls(method: Callable) -> Callable:
     """
-    A decorator to count the number of calls to a method.
-
-    Args:
-        method (Callable): The method to be decorated.
-
-    Returns:
-        Callable: The decorated method.
+    Returns a Callable object
     """
-    @functools.wraps(method)
+    key = method.__qualname__
+
+    @wraps(method)
     def wrapper(self, *args, **kwargs):
-        key = method.__qualname__
+        """
+        A Wrapper for decorated function
+        """
         self._redis.incr(key)
         return method(self, *args, **kwargs)
+
     return wrapper
 
 
 def call_history(method: Callable) -> Callable:
     """
-    A decorator to store the call history of a method.
-
-    Args:
-        method (Callable): The method to be decorated.
-
-    Returns:
-        Callable: The decorated method.
+    Store history of inputs and
+    outputs for a particular function
     """
-    @functools.wraps(method)
+    @wraps(method)
     def wrapper(self, *args, **kwargs):
-        input_key = f"{method.__qualname__}:inputs"
-        output_key = f"{method.__qualname__}:outputs"
-        self._redis.rpush(input_key, str(args))
-        output = method(self, *args, **kwargs)
-        self._redis.rpush(output_key, str(output))
-
+        """
+        A wrapper for the decorated
+        function call_history
+        """
+        input = str(args)  # Normalizing
+        self._redis.rpush(method.__qualname__ + ":inputs", input)
+        output = str(method(self, *args, **kwargs))
+        self._redis.rpush(method.__qualname__ + ":outputs", output)
         return output
+
     return wrapper
+
+
+def replay(fn: Callable):
+    """
+    Display the history of calls of a particular function
+    """
+    r = redis.Redis()
+    function_name = fn.__qualname__
+    value = r.get(function_name)
+    try:
+        value = int(value.decode("utf-8"))
+    except Exception:
+        value = 0
+
+    # print(f"{function_name} was called {value} times")
+    print("{} was called {} times:".format(function_name, value))
+    # inputs = r.lrange(f"{function_name}:inputs", 0, -1)
+    inputs = r.lrange("{}:inputs".format(function_name), 0, -1)
+
+    # outputs = r.lrange(f"{function_name}:outputs", 0, -1)
+    outputs = r.lrange("{}:outputs".format(function_name), 0, -1)
+
+    for input, output in zip(inputs, outputs):
+        try:
+            input = input.decode("utf-8")
+        except Exception:
+            input = ""
+
+        try:
+            output = output.decode("utf-8")
+        except Exception:
+            output = ""
+
+        # print(f"{function_name}(*{input}) -> {output}")
+        print("{}(*{}) -> {}".format(function_name, input, output))
 
 
 class Cache:
     """
-    A class used to manage data in a Redis cache.
-
-    Attributes
-    ----------
-    _redis : redis.Redis
-        A Redis client instance used to interact with the cache.
-
-    Methods
-    -------
-    __init__()
-        Initializes the Cache instance by creating a Redis
-        client and flushing the database.
-
-    store(data: Union[str, bytes, int, float]) -> str
-        Stores the given data in the cache and returns a
-        unique key for the stored data.
+    A cache class
     """
 
     def __init__(self):
         """
-        Initializes the Cache instance by creating a
-        Redis client and flushing the database.
-
-        Note
-        ----
-        This will delete all existing data in the Redis database.
-        Use with caution.
+        Constructor method that stores
+        an instance of the Redis client
         """
         self._redis = redis.Redis()
         self._redis.flushdb()
 
-    @call_history
     @count_calls
+    @call_history
     def store(self, data: Union[str, bytes, int, float]) -> str:
         """
-        Stores the given data in the cache and returns
-        a unique key for the stored data.
-
-        Parameters
-        ----------
-        data : Union[str, bytes, int, float]
-            The data to be stored in the cache.
-            It can be of type str, bytes, int, or float.
-
-        Returns
-        -------
-        str
-            A unique key for the stored data.
+        Method that takes a data argument
+        and returns a key
         """
-        key = str(uuid.uuid4())
-        self._redis.set(key, data)
-        return key
+        random_key = str(uuid.uuid4())
+        self._redis.set(random_key, data)
+        return random_key
 
     def get(self,
             key: str,
-            fn: Callable = None) -> Union[str,
-                                          bytes,
-                                          int,
-                                          float]:
+            fn: Optional[Callable] = None) -> Union[str,
+                                                    bytes,
+                                                    int,
+                                                    float]:
         """
-        Retrieves the data associated with the given key from the cache
-        and applies an optional transformation function.
-
-        Parameters
-        ----------
-        key : str
-            The key of the data to be retrieved from the cache.
-        fn : Callable, optional
-            An optional transformation function to be applied to
-            the retrieved data (default is None).
-
-        Returns
-        -------
-        Union[str, bytes, int, float]
-            The retrieved data, possibly transformed by the given function.
+        Method that takes a key argument
+        and returns the data in the desired
+        format
         """
         data = self._redis.get(key)
         if fn:
-            return fn(data)
+            data = fn(data)
         return data
 
-    def get_str(self, key: str) -> str:
+    def get_str(self, data: str) -> str:
         """
-        Retrieves the data associated with the given key
-        from the cache and returns it as a string.
-
-        Parameters
-        ----------
-        key : str
-            The key of the data to be retrieved from the cache.
-
-        Returns
-        -------
-        str
-            The retrieved data as a string.
+        automatically parametrizes Cache.get
+        with the correct
+        conversion function
         """
-        return self.get(key, fn=lambda d: d.decode("utf-8"))
+        value = self._redis.get(data)
+        return value.decode('utf-8')
 
-    def get_int(self, key: str) -> int:
+    def get_int(self, data: str) -> int:
         """
-        Retrieves the data associated with the given key from
-        the cache and returns it as an integer.
-
-        Parameters
-        ----------
-        key : str
-            The key of the data to be retrieved from the cache.
-
-        Returns
-        -------
-        int
-            The retrieved data as an integer.
+        automatically parametrizes Cache.get
+        with the correct conversion function
         """
-        return self.get(key, fn=int)
+        value = self._redis.get(data)
+        try:
+            value = int(value.decode("utf-8"))
+        except Exception:
+            value = 0
+        return value
